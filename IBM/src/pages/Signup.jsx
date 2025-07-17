@@ -46,6 +46,7 @@ function Signup() {
         'x-rapidapi-host': 'validect-email-verification-v1.p.rapidapi.com'
       }
     };
+    
 
     try {
       const response = await axios.request(options);
