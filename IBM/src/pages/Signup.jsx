@@ -42,7 +42,7 @@ function Signup() {
         email: formData.email
       },
       headers: {
-        'x-rapidapi-key': '9b06821156mshb276c6dbbc2e4c6p138fccjsn56a7ca33b952',
+        'x-rapidapi-key': `${import.meta.env.VITE_RAPID_KEY}`,
         'x-rapidapi-host': 'validect-email-verification-v1.p.rapidapi.com'
       }
     };
@@ -118,6 +118,17 @@ function Signup() {
           <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-green-400 to-green-600"></div>
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-green-100 rounded-full opacity-20"></div>
           <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-green-100 rounded-full opacity-20"></div>
+
+          {/* Back to Home Button */}
+          <button
+            onClick={handleBackToHome}
+            className="absolute top-4 left-4 text-gray-600 hover:text-gray-900 flex items-center gap-2 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Back to Home</span>
+          </button>
 
           {error && (
             <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-md">

@@ -17,6 +17,13 @@ function Files() {
   const [toastMessage, setToastMessage] = useState('');
   const [viewType, setViewType] = useState('grid'); // 'grid' or 'list'
   const [isDeleting, setIsDeleting] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpError, setOtpError] = useState('');
+  const [remainingAttempts, setRemainingAttempts] = useState(3);
+  const [showOtpVerification, setShowOtpVerification] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
   const navigate = useNavigate();
 
   const fetchUserData = async () => {
@@ -27,17 +34,61 @@ function Files() {
         return;
       }
 
-      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/profile`, {
+      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/auth/profile`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
       setUser(response.data.user);
+      setShowOtpVerification(true);
     } catch (error) {
-      console.error('Error fetching user data:', error);
       if (error.response?.status === 401) {
         localStorage.removeItem('token');
         navigate('/login');
+      }
+    }
+  };
+
+  const requestOTP = async () => {
+    try {
+      setSendingOtp(true);
+      setOtpError('');
+      const token = localStorage.getItem('token');
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/files/request-otp`, {}, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setOtpSent(true);
+      showToast('OTP sent to your email');
+    } catch (error) {
+      console.error('Error requesting OTP:', error);
+      setOtpError('Failed to send OTP. Please try again.');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const verifyOTP = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${import.meta.env.VITE_API_URL}/api/files/verify-otp`, 
+        { otp },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      setOtpVerified(true);
+      setOtpError('');
+      showToast('OTP verified successfully');
+      fetchFiles(1);
+    } catch (error) {
+      console.error('Error verifying OTP:', error);
+      setOtpError(error.response?.data?.message || 'Invalid OTP');
+      if (error.response?.data?.remainingAttempts !== undefined) {
+        setRemainingAttempts(error.response.data.remainingAttempts);
       }
     }
   };
@@ -51,7 +102,7 @@ function Files() {
       }
 
       setLoading(true);
-      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/files`, {
+      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/files/files`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -76,7 +127,6 @@ function Files() {
   };
 
   useEffect(() => {
-    fetchFiles(1);
     fetchUserData();
     
     const handleFileUploaded = () => {
@@ -105,7 +155,7 @@ function Files() {
         return;
       }
 
-      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/download/${fileId}`, {
+      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/files/download/${fileId}`, {
         headers: {
           Authorization: `Bearer ${token}`
         },
@@ -144,7 +194,7 @@ function Files() {
         return;
       }
 
-      await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/files/${fileId}`, {
+      await axios.delete(`${import.meta.env.VITE_API_URL}/api/files/files/${fileId}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -185,12 +235,117 @@ function Files() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  if (loading) {
+  if (loading && otpVerified) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-green-500 mx-auto mb-4"></div>
           <p className="text-gray-600 text-lg">Loading your files...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!otpVerified && showOtpVerification) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full relative">
+          {/* Back Button */}
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="absolute top-4 left-4 text-gray-600 hover:text-gray-900 flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Back</span>
+          </button>
+
+          <div className="text-center mb-8">
+            <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Verify Your Identity</h2>
+            <p className="text-gray-600">Please verify your identity to access files</p>
+            {user?.email && (
+              <p className="text-sm text-gray-500 mt-2">{user.email}</p>
+            )}
+          </div>
+
+          {otpError && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-red-600 text-center">{otpError}</p>
+              {remainingAttempts > 0 && otpError.includes('Invalid OTP') && (
+                <p className="text-red-600 text-center mt-2">Remaining attempts: {remainingAttempts}</p>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-6">
+            {!otpSent ? (
+              <button
+                onClick={requestOTP}
+                disabled={sendingOtp}
+                className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {sendingOtp ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Sending OTP...
+                  </>
+                ) : (
+                  'Send OTP'
+                )}
+              </button>
+            ) : (
+              <>
+                <div>
+                  <input
+                    type="text"
+                    maxLength="6"
+                    className="w-full px-4 py-3 text-center text-2xl tracking-widest rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    placeholder="Enter OTP"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  />
+                  <p className="text-xs text-gray-500 mt-2 text-center">OTP will expire in 3 minutes</p>
+                </div>
+
+                <button
+                  onClick={verifyOTP}
+                  disabled={otp.length !== 6}
+                  className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Verify OTP
+                </button>
+
+                <div className="text-center">
+                  <button
+                    onClick={requestOTP}
+                    disabled={sendingOtp}
+                    className="text-green-600 hover:text-green-700 font-medium flex items-center justify-center mx-auto"
+                  >
+                    {sendingOtp ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Resending...
+                      </>
+                    ) : (
+                      'Resend OTP'
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );

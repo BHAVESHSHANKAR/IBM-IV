@@ -9,6 +9,111 @@ const { Buffer } = require('buffer');
 const stream = require('stream');
 const axios = require('axios');
 const retry = require('async-retry');
+const nodemailer = require('nodemailer');
+
+// Configure nodemailer
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+// Store OTPs temporarily (in production, use Redis or a database)
+const otpStore = new Map();
+
+// Generate OTP
+function generateOTP() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Send OTP via email
+async function sendOTP(email, otp) {
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'FragmentGuard - File Access OTP',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #16a34a;">FragmentGuard File Access</h2>
+                <p>Your one-time password (OTP) for accessing files is:</p>
+                <h1 style="color: #16a34a; font-size: 32px; letter-spacing: 5px; text-align: center; padding: 20px; background-color: #f0fdf4; border-radius: 10px;">${otp}</h1>
+                <p>This OTP will expire in 5 minutes.</p>
+                <p style="color: #666;">If you didn't request this OTP, please ignore this email.</p>
+            </div>
+        `
+    };
+
+    await transporter.sendMail(mailOptions);
+}
+
+// Request OTP endpoint
+router.post('/request-otp', authenticateToken, async (req, res) => {
+    try {
+        const { email } = req.user;
+        
+        // Clear any existing OTP
+        if (otpStore.has(email)) {
+            otpStore.delete(email);
+        }
+
+        const otp = generateOTP();
+        
+        // Store OTP with 3-minute expiration
+        otpStore.set(email, {
+            otp,
+            expiry: Date.now() + 3 * 60 * 1000, // 3 minutes
+            attempts: 0
+        });
+
+        await sendOTP(email, otp);
+        
+        res.json({ message: 'OTP sent successfully' });
+    } catch (error) {
+        console.error('Error sending OTP:', error);
+        res.status(500).json({ message: 'Failed to send OTP' });
+    }
+});
+
+// Verify OTP endpoint
+router.post('/verify-otp', authenticateToken, async (req, res) => {
+    try {
+        const { otp } = req.body;
+        const { email } = req.user;
+        
+        const otpData = otpStore.get(email);
+        
+        if (!otpData) {
+            return res.status(400).json({ message: 'No OTP requested. Please request a new OTP.' });
+        }
+
+        if (Date.now() > otpData.expiry) {
+            otpStore.delete(email);
+            return res.status(400).json({ message: 'OTP expired. Please request a new OTP.' });
+        }
+
+        if (otpData.attempts >= 3) {
+            otpStore.delete(email);
+            return res.status(400).json({ message: 'Too many attempts. Please request a new OTP.' });
+        }
+
+        if (otpData.otp !== otp) {
+            otpData.attempts++;
+            return res.status(400).json({ 
+                message: 'Invalid OTP',
+                remainingAttempts: 3 - otpData.attempts
+            });
+        }
+
+        // OTP verified successfully
+        otpStore.delete(email);
+        res.json({ message: 'OTP verified successfully' });
+    } catch (error) {
+        console.error('Error verifying OTP:', error);
+        res.status(500).json({ message: 'Failed to verify OTP' });
+    }
+});
 
 // Configure Cloudinary
 cloudinary.config({

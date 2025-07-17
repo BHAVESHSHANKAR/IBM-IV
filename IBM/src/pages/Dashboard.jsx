@@ -67,7 +67,7 @@ function Dashboard() {
       try {
         setLoading(true);
         setError(null);
-        const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/profile`, {
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/auth/profile`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -126,7 +126,7 @@ function Dashboard() {
         setUploadState('encrypting');
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/upload`, formData, {
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/files/upload`, formData, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'multipart/form-data'
@@ -175,7 +175,7 @@ function Dashboard() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    navigate('/login');
+    navigate('/');
   };
 
   if (loading) {
