@@ -105,6 +105,23 @@ function Dashboard() {
     const files = event?.target?.files;
     if (!files || files.length === 0) return;
 
+    // Check for PDF files
+    for (const file of files) {
+      if (file.type === 'application/pdf') {
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-24 sm:top-32 left-1/2 transform -translate-x-1/2 z-50 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2';
+        notification.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span class="font-medium">PDF files are not supported at this time.</span>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 3000);
+        return;
+      }
+    }
+
     setUploading(true);
     setUploadState('uploading');
     setError(null);
@@ -135,12 +152,28 @@ function Dashboard() {
       }
       
       setUploadState('success');
-      // Show success message
-      setShowSuccessMessage(true);
+      // Show enhanced success message
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 z-50 transform transition-all duration-500 ease-in-out';
+      notification.innerHTML = `
+        <div class="bg-green-600 text-white px-6 py-3 rounded-xl shadow-lg flex items-center space-x-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+          <span class="font-medium">Files uploaded successfully! Check your files section.</span>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+      
+      // Reset states
       setTimeout(() => {
         setShowSuccessMessage(false);
         setUploadState('idle');
-      }, 3000); // Hide after 3 seconds
+      }, 3000);
       
       // Trigger a refresh of the Files component
       window.dispatchEvent(new CustomEvent('filesuploaded'));
@@ -313,7 +346,7 @@ function Dashboard() {
                   </div>
                   <div>
                     <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Upload Files</h2>
-                    <p className="text-sm sm:text-base text-gray-600">Supported: DOC, DOCX, JPG, PNG, GTXT</p>
+                    <p className="text-sm sm:text-base text-gray-600">Supported: DOC, DOCX, JPG, PNG, TXT</p>
                   </div>
                 </div>
                 
@@ -336,7 +369,7 @@ function Dashboard() {
                     multiple 
                     ref={fileInputRef}
                     onChange={handleFileUpload}
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt"
+                    accept=".doc,.docx,.jpg,.jpeg,.png,.gif,.txt"
                   />
                   <div className="text-gray-500">
                     {uploadState !== 'idle' ? (
