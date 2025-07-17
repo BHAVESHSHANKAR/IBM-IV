@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import Lottie from 'lottie-react';
+import uploadingAnimation from '../assets/animations/uploading files.json';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -45,12 +47,13 @@ class ErrorBoundary extends React.Component {
 function Dashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [files, setFiles] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [error, setError] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadState, setUploadState] = useState('idle'); // 'idle', 'uploading', 'fragmenting', 'encrypting', 'success'
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const fileInputRef = useRef(null);
+  const profileDropdownRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -70,7 +73,6 @@ function Dashboard() {
           }
         });
         setUser(response.data.user);
-        await fetchFiles(1);
       } catch (error) {
         console.error('Error fetching user data:', error);
         setError('Failed to load user data');
@@ -86,41 +88,25 @@ function Dashboard() {
     fetchUserData();
   }, [navigate]);
 
-  const fetchFiles = async (page) => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/login');
-        return;
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
+        setShowProfileDropdown(false);
       }
+    };
 
-      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/files`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      
-      if (response.data) {
-        setFiles(response.data || []);
-        setCurrentPage(1);
-        setTotalPages(1);
-        setError(null);
-      }
-    } catch (error) {
-      console.error('Error fetching files:', error);
-      setError('Failed to load files');
-      if (error.response?.status === 401) {
-        localStorage.removeItem('token');
-        navigate('/login');
-      }
-    }
-  };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleFileUpload = async (event) => {
     const files = event?.target?.files;
     if (!files || files.length === 0) return;
 
     setUploading(true);
+    setUploadState('uploading');
     setError(null);
     const token = localStorage.getItem('token');
     if (!token) {
@@ -133,6 +119,13 @@ function Dashboard() {
         const formData = new FormData();
         formData.append('file', file);
 
+        // Simulate different states with delays
+        setUploadState('fragmenting');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        setUploadState('encrypting');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
         await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/upload`, formData, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -140,11 +133,21 @@ function Dashboard() {
           }
         });
       }
-      await fetchFiles(currentPage);
-      setError(null);
+      
+      setUploadState('success');
+      // Show success message
+      setShowSuccessMessage(true);
+      setTimeout(() => {
+        setShowSuccessMessage(false);
+        setUploadState('idle');
+      }, 3000); // Hide after 3 seconds
+      
+      // Trigger a refresh of the Files component
+      window.dispatchEvent(new CustomEvent('filesuploaded'));
     } catch (error) {
       console.error('Error uploading file:', error);
       setError('Failed to upload file');
+      setUploadState('idle');
       if (error.response?.status === 401) {
         localStorage.removeItem('token');
         navigate('/login');
@@ -154,87 +157,25 @@ function Dashboard() {
     }
   };
 
-  const handleDownload = async (fileId, fileName) => {
-    try {
-      setError(null);
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/login');
-        return;
-      }
-
-      const response = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/download/${fileId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        responseType: 'blob'
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error downloading file:', error);
-      setError('Failed to download file');
-      if (error.response?.status === 401) {
-        localStorage.removeItem('token');
-        navigate('/login');
-      }
-    }
-  };
-
-  const handleDelete = async (fileId) => {
-    if (!window.confirm('Are you sure you want to delete this file?')) return;
-
-    try {
-      setError(null);
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/login');
-        return;
-      }
-
-      await axios.delete(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/files/files/${fileId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      await fetchFiles(currentPage);
-    } catch (error) {
-      console.error('Error deleting file:', error);
-      setError('Failed to delete file');
-      if (error.response?.status === 401) {
-        localStorage.removeItem('token');
-        navigate('/login');
-      }
+  // Helper function to get upload state message
+  const getUploadStateMessage = () => {
+    switch(uploadState) {
+      case 'uploading':
+        return 'Uploading your files...';
+      case 'fragmenting':
+        return 'Fragmenting files for enhanced security...';
+      case 'encrypting':
+        return 'Encrypting file fragments...';
+      case 'success':
+        return 'Files uploaded successfully!';
+      default:
+        return '';
     }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
-
-  const formatFileSize = (bytes) => {
-    if (typeof bytes !== 'number' || bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   if (loading) {
@@ -264,46 +205,120 @@ function Dashboard() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <header className="bg-white shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <h1 className="text-2xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
-            <div className="flex items-center gap-4">
-              <div className="text-center sm:text-right">
-                <p className="text-sm sm:text-base font-medium text-gray-900">{user?.username || 'User'}</p>
-                <p className="text-xs sm:text-sm text-gray-500">{user?.email || ''}</p>
+        {/* Success Message Toast */}
+        {showSuccessMessage && (
+          <div className="fixed top-24 sm:top-32 left-1/2 transform -translate-x-1/2 z-50">
+            <div className="bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="font-medium">Files uploaded successfully!</span>
+            </div>
+          </div>
+        )}
+
+        {/* Floating Navbar */}
+        <header className="fixed w-full top-2 sm:top-4 z-50 px-2 sm:px-4">
+          <div className="max-w-[98%] sm:max-w-[95%] mx-auto">
+            <div className="bg-white rounded-full shadow-lg border border-green-500 py-2 sm:py-3 px-4 sm:px-10">
+              <div className="flex justify-between items-center">
+                {/* Left side - FragmentGuard */}
+                <div className="flex items-center space-x-4">
+                  <span className="bg-green-100 text-green-800 px-4 sm:px-8 py-1.5 sm:py-2.5 rounded-full text-base sm:text-xl font-semibold hover:bg-green-200 transition-colors whitespace-nowrap">
+                    FragmentGuard
+                  </span>
+                  <button
+                    onClick={() => navigate('/files')}
+                    className="bg-green-600 text-white px-4 sm:px-6 py-1.5 sm:py-2.5 rounded-full text-base sm:text-lg font-medium hover:bg-green-700 transition-colors flex items-center space-x-2"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>My Files</span>
+                  </button>
+                </div>
+
+                {/* Right side - Profile */}
+                <div className="relative" ref={profileDropdownRef}>
+                  <button
+                    onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                    className="flex items-center justify-center w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-green-100 hover:bg-green-200 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 sm:w-8 sm:h-8 text-green-600">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                    </svg>
+                  </button>
+
+                  {/* Enhanced Profile Dropdown */}
+                  {showProfileDropdown && (
+                    <div className="absolute right-0 mt-3 w-[280px] sm:w-[320px] bg-white rounded-2xl shadow-2xl py-3 z-10 border-2 border-green-100">
+                      <div className="px-4 sm:px-6 py-3 border-b border-gray-100">
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-green-100 p-2 rounded-full flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 sm:w-7 sm:h-7 text-green-600">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                            </svg>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="group relative">
+                              <p className="text-base sm:text-lg text-gray-900 truncate pr-4">
+                                {user?.email || 'No email'}
+                              </p>
+                              <div className="invisible group-hover:visible absolute left-0 -bottom-1 translate-y-full bg-gray-900 text-white text-sm rounded-lg py-1 px-2 z-20 w-fit max-w-[250px] break-all">
+                                {user?.email || 'No email'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-2 pt-2">
+                        <button
+                          onClick={handleLogout}
+                          className="w-full text-left px-4 py-3 flex items-center space-x-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors group"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 group-hover:text-red-700">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                          </svg>
+                          <span className="text-base sm:text-lg font-medium group-hover:text-red-700">Logout</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="inline-flex items-center px-4 sm:px-5 py-2 border border-transparent rounded-lg shadow-sm text-sm sm:text-base font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200"
-              >
-                Logout
-              </button>
             </div>
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Upload Files Card */}
-            <div className="bg-white overflow-hidden shadow-lg rounded-2xl transform transition-all duration-200 hover:shadow-xl">
-              <div className="p-6 sm:p-8">
-                <div className="flex items-center justify-center w-14 sm:w-16 h-14 sm:h-16 bg-green-100 rounded-2xl mb-4 sm:mb-5">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 sm:w-8 h-7 sm:h-8 text-green-600">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                  </svg>
+        {/* Adjust padding for different screen sizes */}
+        <div className="pt-20 sm:pt-28">
+          {/* Main Content */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
+            {/* Greeting Section */}
+            <div className="mb-7">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                Hey! <span className="text-green-600">{user?.username || 'User'}</span>
+              </h1>
+              <p className="mt-2 text-base sm:text-lg text-gray-600">Welcome to your secure file management dashboard</p>
+            </div>
+
+            {/* Upload Files Card - Full Width */}
+            <div className="bg-white overflow-hidden shadow-lg rounded-xl transform transition-all duration-200 hover:shadow-xl">
+              <div className="p-5 sm:p-7">
+                <div className="flex items-center mb-5">
+                  <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-xl mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 text-green-600">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Upload Files</h2>
+                    <p className="text-sm sm:text-base text-gray-600">Supported: DOC, DOCX, JPG, PNG, GTXT</p>
+                  </div>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">Upload Files</h2>
-                <p className="text-sm sm:text-base text-gray-600 mb-6">
-                  Drag and drop your files here or click to browse
-                  <br />
-                  <span className="text-xs text-gray-500">
-                    Supported: PDF, DOC, DOCX, JPG, PNG, GIF, TXT (Max 10MB)
-                  </span>
-                </p>
+                
                 <div 
-                  className={`border-2 border-dashed border-gray-300 rounded-xl p-6 sm:p-8 text-center hover:border-green-500 transition-colors cursor-pointer bg-gray-50 hover:bg-green-50 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
+                  className={`border-2 border-dashed border-gray-300 rounded-xl p-7 text-center hover:border-green-500 transition-colors cursor-pointer bg-gray-50 hover:bg-green-50 ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
                   onClick={() => fileInputRef.current?.click()}
                   onDrop={(e) => {
                     e.preventDefault();
@@ -324,16 +339,31 @@ function Dashboard() {
                     accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt"
                   />
                   <div className="text-gray-500">
-                    {uploading ? (
+                    {uploadState !== 'idle' ? (
                       <div className="flex flex-col items-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-500 mb-2"></div>
-                        <p className="text-sm">Uploading...</p>
+                        <div className="w-48 h-48 mx-auto mb-4">
+                          <Lottie animationData={uploadingAnimation} loop={true} />
+                        </div>
+                        <p className="text-lg font-medium mb-2">{getUploadStateMessage()}</p>
+                        {uploadState !== 'success' && (
+                          <div className="w-full max-w-xs mx-auto">
+                            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-green-600 rounded-full transition-all duration-500"
+                                style={{ 
+                                  width: uploadState === 'uploading' ? '33%' : 
+                                         uploadState === 'fragmenting' ? '66%' : 
+                                         uploadState === 'encrypting' ? '90%' : '100%' 
+                                }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <>
-                        <p className="text-base sm:text-lg font-medium mb-2">Drop files here</p>
-                        <p className="text-sm mb-3">or</p>
-                        <button className="px-6 py-3 bg-green-600 text-white rounded-lg text-sm sm:text-base font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 shadow-sm hover:shadow-md">
+                        <p className="text-lg font-medium mb-3">Drop files here or click to browse</p>
+                        <button className="px-7 py-2.5 bg-green-600 text-white rounded-lg text-base font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 shadow-sm hover:shadow-md">
                           Browse Files
                         </button>
                       </>
@@ -343,70 +373,102 @@ function Dashboard() {
               </div>
             </div>
 
-            {/* Get Files Card */}
-            <div className="bg-white overflow-hidden shadow-lg rounded-2xl transform transition-all duration-200 hover:shadow-xl">
-              <div className="p-6 sm:p-8">
-                <div className="flex items-center justify-center w-14 sm:w-16 h-14 sm:h-16 bg-blue-100 rounded-2xl mb-4 sm:mb-5">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 sm:w-8 h-7 sm:h-8 text-blue-600">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0-6.75h-3m3 0h3M12 3v1.5m0 0h-3m3 0h3" />
-                  </svg>
+            {/* Project Information Section */}
+            <div className="mt-8 space-y-6">
+              {/* Main Feature Card */}
+              <div className="bg-white overflow-hidden shadow-lg rounded-xl p-5 sm:p-7">
+                <div className="flex items-center mb-5">
+                  <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-xl mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 text-green-600">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Advanced File Security</h2>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">Your Files</h2>
-                <p className="text-sm sm:text-base text-gray-600 mb-6">Access and manage your uploaded files</p>
-                <div className="bg-gray-50 rounded-xl p-4 sm:p-5">
-                  <div className="space-y-3">
-                    {!files || files.length === 0 ? (
-                      <div className="flex items-center justify-between p-3 sm:p-4 bg-white rounded-lg shadow-sm">
-                        <div className="flex items-center space-x-3">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 sm:w-7 h-6 sm:h-7 text-gray-400">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                          </svg>
-                          <span className="text-sm sm:text-base font-medium text-gray-700">No files uploaded yet</span>
-                        </div>
-                      </div>
-                    ) : (
-                      files.map((file) => (
-                        <div key={file._id} className="flex items-center justify-between p-3 sm:p-4 bg-white rounded-lg shadow-sm hover:shadow transition-shadow">
-                          <div className="flex items-center space-x-3 flex-grow min-w-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 sm:w-7 h-6 sm:h-7 text-gray-400">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                            </svg>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm sm:text-base font-medium text-gray-900 truncate">{file.originalName}</p>
-                              <p className="text-xs text-gray-500">
-                                {formatFileSize(file.size)} • {formatDate(file.uploadDate)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2 ml-4">
-                            <button
-                              onClick={() => handleDownload(file._id, file.originalName)}
-                              className="p-2 text-blue-600 hover:text-blue-800 transition-colors"
-                              title="Download"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleDelete(file._id)}
-                              className="p-2 text-red-600 hover:text-red-800 transition-colors"
-                              title="Delete"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
+                <p className="text-gray-600 mb-6">
+                  FragmentGuard employs cutting-edge fragmentation encryption technology to ensure your files remain secure and private. Our system splits your files into multiple encrypted fragments, making unauthorized access virtually impossible.
+                </p>
+                
+                {/* Security Features Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Fragmentation Process */}
+                  <div className="bg-green-50 rounded-xl p-5">
+                    <div className="flex items-center mb-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-green-600 mr-2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <h3 className="text-lg font-semibold text-gray-900">Fragmentation Process</h3>
+                    </div>
+                    <ul className="space-y-2 text-gray-600">
+                      <li>• File splitting into multiple encrypted fragments</li>
+                      <li>• Unique encryption key for each fragment</li>
+                      <li>• Distributed storage across secure servers</li>
+                      <li>• Real-time fragment verification</li>
+                    </ul>
+                  </div>
+
+                  {/* Security Features */}
+                  <div className="bg-green-50 rounded-xl p-5">
+                    <div className="flex items-center mb-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-green-600 mr-2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                      </svg>
+                      <h3 className="text-lg font-semibold text-gray-900">Security Features</h3>
+                    </div>
+                    <ul className="space-y-2 text-gray-600">
+                      <li>• End-to-end encryption</li>
+                      <li>• Zero-knowledge architecture</li>
+                      <li>• Secure key management</li>
+                      <li>• Automatic fragment rotation</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* How It Works */}
+              <div className="bg-white overflow-hidden shadow-lg rounded-xl p-5 sm:p-7">
+                <div className="flex items-center mb-5">
+                  <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-xl mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 text-green-600">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900">How It Works</h2>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  {/* Upload */}
+                  <div className="bg-green-50 rounded-xl p-5">
+                    <div className="flex items-center mb-3">
+                      <span className="bg-green-200 text-green-800 rounded-full w-8 h-8 flex items-center justify-center font-semibold mr-3">1</span>
+                      <h3 className="text-lg font-semibold text-gray-900">Upload</h3>
+                    </div>
+                    <p className="text-gray-600">Your file is securely uploaded and immediately prepared for fragmentation</p>
+                  </div>
+
+                  {/* Fragment & Encrypt */}
+                  <div className="bg-green-50 rounded-xl p-5">
+                    <div className="flex items-center mb-3">
+                      <span className="bg-green-200 text-green-800 rounded-full w-8 h-8 flex items-center justify-center font-semibold mr-3">2</span>
+                      <h3 className="text-lg font-semibold text-gray-900">Fragment & Encrypt</h3>
+                    </div>
+                    <p className="text-gray-600">Files are split into fragments and each piece is individually encrypted</p>
+                  </div>
+
+                  {/* Secure Storage */}
+                  <div className="bg-green-50 rounded-xl p-5">
+                    <div className="flex items-center mb-3">
+                      <span className="bg-green-200 text-green-800 rounded-full w-8 h-8 flex items-center justify-center font-semibold mr-3">3</span>
+                      <h3 className="text-lg font-semibold text-gray-900">Secure Storage</h3>
+                    </div>
+                    <p className="text-gray-600">Encrypted fragments are distributed across multiple secure locations</p>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </main>
+          </main>
+        </div>
       </div>
     </ErrorBoundary>
   );
