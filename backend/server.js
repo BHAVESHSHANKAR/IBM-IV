@@ -10,7 +10,9 @@ const fileRoutes = require('./routes/fileAuth');
 
 // Middleware
 app.use(cors({
-    origin: process.env.FRONTEND_URL, // Vite's default development port
+    origin: process.env.FRONTEND_URL,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
 app.use(express.json());
