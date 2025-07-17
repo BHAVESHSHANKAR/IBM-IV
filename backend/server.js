@@ -10,7 +10,7 @@ const fileRoutes = require('./routes/fileAuth');
 
 // Middleware
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // Vite's default development port
+    origin: process.env.FRONTEND_URL, // Vite's default development port
     credentials: true
 }));
 app.use(express.json());
