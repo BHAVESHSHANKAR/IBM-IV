@@ -11,6 +11,7 @@ const axios = require('axios');
 const retry = require('async-retry');
 const nodemailer = require('nodemailer');
 
+
 // Configure nodemailer
 const transporter = nodemailer.createTransport({
     service: 'gmail',
